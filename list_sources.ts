@@ -1,0 +1,81 @@
+import { OBSWebSocketClient } from "./switcher/obs_client";
+import fs from "node:fs";
+import path from "node:path";
+
+const CONFIG_FILE = path.join(import.meta.dir, "config.json");
+
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+    }
+  } catch {}
+  return { obs_url: "ws://127.0.0.1:4455", obs_password: "" };
+}
+
+async function main() {
+  const target = process.argv[2];
+  const config = loadConfig();
+  const obs = new OBSWebSocketClient(config.obs_url || "ws://127.0.0.1:4455", config.obs_password || "");
+
+  try {
+    await obs.connect();
+
+    if (target) {
+      console.log(`\n=== INSPECT INPUT: "${target}" ===`);
+      try {
+        const settings = await obs.call("GetInputSettings", { inputName: target });
+        console.log("Settings:", JSON.stringify(settings, null, 2));
+      } catch (err: any) {
+        console.error(`Gagal inspect "${target}":`, err.message);
+      }
+      obs.disconnect();
+      process.exit(0);
+    }
+    
+    // 1. Get Scene List & their items
+    const sceneData = await obs.call("GetSceneList");
+    const currentScene = sceneData.currentProgramSceneName;
+    const scenes: any[] = sceneData.scenes || [];
+
+    console.log(`\n=== SCENES (${scenes.length}) [Active: ${currentScene}] ===`);
+    for (const s of scenes) {
+      const isCurrent = s.sceneName === currentScene ? " * (ACTIVE)" : "";
+      console.log(`\n[Scene] ${s.sceneName}${isCurrent}`);
+      try {
+        const itemsRes = await obs.call("GetSceneItemList", { sceneName: s.sceneName });
+        const items: any[] = itemsRes.sceneItems || [];
+        if (items.length === 0) {
+          console.log("  (no sources)");
+        } else {
+          // Sort top-most first (descending sceneItemIndex)
+          items.sort((a, b) => b.sceneItemIndex - a.sceneItemIndex);
+          for (const item of items) {
+            const status = item.sceneItemEnabled ? "ENABLED" : "MUTED/OFF";
+            console.log(`  - [${item.sceneItemIndex}] ${item.sourceName} (${item.inputKind || item.sourceType}) [${status}]`);
+          }
+        }
+      } catch (err: any) {
+        console.log(`  Error getting items: ${err.message}`);
+      }
+    }
+
+    // 2. Global Input List
+    try {
+      const inputsRes = await obs.call("GetInputList");
+      const inputs: any[] = inputsRes.inputs || [];
+      console.log(`\n=== ALL GLOBAL INPUTS (${inputs.length}) ===`);
+      for (const input of inputs) {
+        console.log(`- ${input.inputName} (${input.inputKind})`);
+      }
+    } catch {}
+
+    obs.disconnect();
+    process.exit(0);
+  } catch (err: any) {
+    console.error("Gagal terhubung ke OBS:", err.message);
+    process.exit(1);
+  }
+}
+
+main();

@@ -1,0 +1,14 @@
+{
+  "name": "@pakakas/obs-control",
+  "version": "1.0.0",
+  "description": "OBS Studio control: auto scene switcher (Alt+Tab listener) + utilities",
+  "main": "switcher/index.ts",
+  "scripts": {
+    "dev:listen-scenes": "bun --watch switcher/index.ts",
+    "listen-scenes": "bun switcher/index.ts",
+    "list-sources": "bun list_sources.ts",
+    "rename-source": "bun rename_source.ts"
+  },
+  "keywords": ["obs", "obs-control", "obs-websocket", "auto-scene-switcher", "alt-tab", "window-tracker"],
+  "license": "MIT"
+}

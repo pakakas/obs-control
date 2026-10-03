@@ -1,0 +1,9 @@
+config.json
+node_modules
+static/profilepic.png
+.bun
+dist
+.DS_Store
+*.log
+.env
+static/BL_proxy/

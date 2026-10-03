@@ -1,0 +1,19 @@
+{
+  "name": "@pakakas/tiktok-stream-key",
+  "version": "1.0.0",
+  "description": "TikTok Live Stream Key & RTMP URL Generator with Web Dashboard & CDP automation",
+  "main": "server.ts",
+  "bin": {
+    "tiktok-live": "./live.ts"
+  },
+  "scripts": {
+    "start": "bun run server.ts",
+    "dev": "bun --watch server.ts",
+    "live": "bun run live.ts",
+    "go-live": "bun run live.ts",
+    "set-title": "bun run live.ts"
+  },
+  "keywords": ["tiktok", "live", "streamkey", "rtmp", "obs", "bun"],
+  "author": "",
+  "license": "MIT"
+}

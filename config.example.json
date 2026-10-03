@@ -1,0 +1,12 @@
+{
+  "obs_url": "ws://127.0.0.1:4455",
+  "obs_password": "",
+  "poll_interval_ms": 200,
+  "aliases": {
+    "Code.exe": "VSCode",
+    "brave.exe": "Browser",
+    "chrome.exe": "Browser",
+    "msedge.exe": "Browser",
+    "blender.exe": "Blender"
+  }
+}

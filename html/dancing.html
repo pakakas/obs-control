@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Dancing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #2d1b30;
+    }
+    img {
+      position: absolute;
+      top: 18%;
+      height: 80%;
+      width: auto;
+      object-fit: contain;
+      will-change: transform;
+    }
+  </style>
+</head>
+<body>
+  <img id="dancer" src="../static/dancing.gif" alt="dancing">
+  <script>
+    const img = document.getElementById("dancer");
+    const SPEED = 0.02; // makin kecil makin lambat
+
+    function size() {
+      return { w: img.offsetWidth, h: img.offsetHeight };
+    }
+
+    // Posisi horizontal dalam 0..1 relatif ke area gerak
+    let x = Math.random();
+    let tx = x;
+    let waiting = false;
+
+    function newTarget() {
+      // Maksimal geser 0.25 dari posisi sekarang, dijaga di dalam frame
+      const MAX_STEP = 0.25;
+      const lo = Math.max(0.05, x - MAX_STEP);
+      const hi = Math.min(0.95, x + MAX_STEP);
+      tx = lo + Math.random() * (hi - lo);
+      waiting = false;
+    }
+
+    function frame() {
+      if (!waiting) {
+        x += (tx - x) * SPEED;
+        if (Math.abs(tx - x) < 0.01) {
+          x = tx;
+          waiting = true;
+          setTimeout(newTarget, 800 + Math.random() * 1500);
+        }
+      }
+      const { w } = size();
+      const maxX = window.innerWidth - w;
+      img.style.transform = `translateX(${x * maxX}px)`;
+      requestAnimationFrame(frame);
+    }
+
+    newTarget();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
