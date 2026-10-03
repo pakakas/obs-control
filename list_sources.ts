@@ -60,6 +60,38 @@ async function main() {
       }
     }
 
+    // 1b. Check Aitum Vertical Canvas scenes/sources
+    const CANVAS_UUID = "7b16b6bd-e632-475e-80fb-090e7dc91868";
+    console.log(`\n=== VERTICAL CANVAS / SCENES ===`);
+    let foundVertical = false;
+
+    // Check with canvasUuid
+    for (const prefix of ["", "v-", "Vertical - "]) {
+      for (const s of scenes) {
+        const testName = prefix ? (prefix + s.sceneName) : s.sceneName;
+        try {
+          const itemsRes = await obs.call("GetSceneItemList", {
+            sceneName: testName,
+            canvasUuid: CANVAS_UUID
+          });
+          const items: any[] = itemsRes.sceneItems || [];
+          if (items.length > 0) {
+            foundVertical = true;
+            console.log(`\n[Vertical Scene] ${testName}`);
+            items.sort((a, b) => b.sceneItemIndex - a.sceneItemIndex);
+            for (const item of items) {
+              const status = item.sceneItemEnabled ? "ENABLED" : "MUTED/OFF";
+              console.log(`  - [${item.sceneItemIndex}] ${item.sourceName} (${item.inputKind || item.sourceType}) [${status}]`);
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (!foundVertical) {
+      console.log("Tidak ada scene terpisah di kanvas vertikal (atau canvasUuid tidak aktif).");
+    }
+
     // 2. Global Input List
     try {
       const inputsRes = await obs.call("GetInputList");
