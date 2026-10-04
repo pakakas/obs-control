@@ -68,17 +68,24 @@ async function loadSources() {
       }
     } catch {}
   }
+
+  console.debug({mainSources, singleInstanceSources})
 }
 
 function findMatchingScene(win: WindowInfo, scenes: string[], mainSources: Map<string, any>): string | null {
-  const source = mainSources.get(win.title);
+  const source = mainSources.get(win.title)
+  console.debug({source, win})
   if (source?.isVisible) {
-    return source.sceneName;
+    return source.sceneName
   }
 
+  const tLower = win.title.toLowerCase().trim();
+  const pLower = win.processName.toLowerCase().replace(/\.exe$/, "").trim();
+  console.debug('findMatchingScene', win, scenes)
+
   for (const source of mainSources.values()) {
-    if (source.processName?.toLowerCase() === win.processName.toLowerCase()) {
-      return source.sceneName;
+    if (source.processName === win.processName) {
+      return source.sceneName
     }
   }
 
