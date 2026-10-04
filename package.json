@@ -2,10 +2,10 @@
   "name": "@pakakas/obs-control",
   "version": "1.0.0",
   "description": "OBS Studio control: auto scene switcher (Alt+Tab listener) + utilities",
-  "main": "switcher/index.ts",
+  "main": "switcher/sw.ts",
   "scripts": {
-    "dev:listen-scenes": "bun --watch switcher/index.ts",
-    "listen-scenes": "bun switcher/index.ts",
+    "dev:listen-scenes": "bun --watch switcher/sw.ts",
+    "listen-scenes": "bun switcher/sw.ts",
     "list-sources": "bun list_sources.ts",
     "rename-source": "bun rename_source.ts",
     "toggle-source": "bun toggle_source.ts",

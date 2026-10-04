@@ -40,55 +40,83 @@ let currentScene = "";
 let dynamicAliases: Record<string, string> = {};
 
 async function loadSources() {
-  const windows = getWindows()
-  for (const sceneName of obs.availableScenes) {
-    const sources = await obs.call('GetSceneItemList', { sceneName })
-    const input = await obs.call('GetInputSettings', { inputName: sources.sceneItems[0].sourceName });
+  const windows = getWindows();
+  mainSources.clear();
+  singleInstanceSources.clear();
 
-    // console.debug({scene_0: sources.sceneItems[0], input})
+  const scenes = availableScenes.length > 0 ? availableScenes : (obs.availableScenes || []);
+  for (const sceneName of scenes) {
+    try {
+      const sources = await obs.call('GetSceneItemList', { sceneName });
+      // Aturan: Main source adalah Window/Game Capture TERATAS yang ENABLED
+      const winCaps = (sources.sceneItems || [])
+        .filter((i: any) => (i.inputKind === "window_capture" || i.inputKind === "game_capture") && i.sceneItemEnabled === true)
+        .sort((a: any, b: any) => b.sceneItemIndex - a.sceneItemIndex);
 
-    if (input.inputSettings.window) {
-      const [title, sourceType, processName] = input.inputSettings.window.split(':')
-      mainSources.set(title, {
-        sourceName: sources.sceneItems[0].sourceName,
-        sceneName, title, processName, sourceType,
-        pid: windows.find(w => w.title.includes(title))?.pid,
-        get isVisible() {
-          return true
-        }
-      })
-      if (!singleInstanceSources.get(processName)) {
-        singleInstanceSources.set(processName, {
-          sourceName: sources.sceneItems[0].sourceName,
-          sceneName, title, processName, sourceType,
-          pid: windows.find(w => w.title.includes(title))?.pid,
-          get isVisible() {
-            return true
+      if (winCaps.length > 0) {
+        const topSource = winCaps[0];
+        const input = await obs.call('GetInputSettings', { inputName: topSource.sourceName });
+
+        if (input.inputSettings?.window) {
+          const [title, sourceType, processName] = input.inputSettings.window.split(':');
+          const sourceData = {
+            sourceName: topSource.sourceName,
+            sceneName,
+            title,
+            processName,
+            sourceType,
+            pid: windows.find(w => w.title?.includes(title))?.pid,
+            get isVisible() {
+              return true;
+            }
+          };
+          mainSources.set(title, sourceData);
+          if (processName && !singleInstanceSources.get(processName)) {
+            singleInstanceSources.set(processName, sourceData);
           }
-        })
+        }
       }
-    }
+    } catch {}
   }
-
-  console.debug({mainSources, singleInstanceSources})
 }
 
 function findMatchingScene(win: WindowInfo, scenes: string[], mainSources: Map<string, any>): string | null {
-  const source = mainSources.get(win.title)
-  console.debug({source, win})
+  // 1. Direct title match di mainSources
+  const source = mainSources.get(win.title);
   if (source?.isVisible) {
-    return source.sceneName
+    return source.sceneName;
   }
 
   const tLower = win.title.toLowerCase().trim();
   const pLower = win.processName.toLowerCase().replace(/\.exe$/, "").trim();
-console.debug('findMatchingScene', win, scenes)
 
-  for (const source of mainSources.values()) {
-    if (source.processName === win.processName) {
-      return source.sceneName
+  // 2. Match processName di mainSources
+  for (const src of mainSources.values()) {
+    if (src.processName?.toLowerCase() === win.processName.toLowerCase()) {
+      return src.sceneName;
     }
   }
+
+  // 3. Dynamic aliases (dari top-most window capture per scene)
+  if (dynamicAliases) {
+    for (const [exeName, targetScene] of Object.entries(dynamicAliases)) {
+      const kLower = exeName.toLowerCase().replace(/\.exe$/, "");
+      if (pLower === kLower || win.processName.toLowerCase() === exeName.toLowerCase()) {
+        const matched = scenes.find(s => s.toLowerCase() === targetScene.toLowerCase());
+        if (matched) return matched;
+      }
+    }
+  }
+
+  // 4. Fallback match nama scene (misal scene "terminal" cocok dengan "Termius")
+  for (const scene of scenes) {
+    const sLower = scene.toLowerCase().trim();
+    if (pLower.includes(sLower) || sLower.includes(pLower)) {
+      return scene;
+    }
+  }
+
+  return null;
 }
 
 let lastHwnd: any = null;
@@ -122,6 +150,7 @@ async function refreshScenes() {
       } catch (e) {}
     }
     dynamicAliases = newAliases;
+    await loadSources();
   } catch {}
 }
 
