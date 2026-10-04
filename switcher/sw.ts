@@ -37,8 +37,6 @@ const singleInstanceSources = new Map()
 
 let availableScenes: string[] = [];
 let currentScene = "";
-let dynamicAliases: Record<string, string> = {};
-
 async function loadSources() {
   const windows = getWindows();
   mainSources.clear();
@@ -76,38 +74,14 @@ async function loadSources() {
 }
 
 function findMatchingScene(win: WindowInfo, scenes: string[], mainSources: Map<string, any>): string | null {
-  // 1. Direct title match di mainSources
   const source = mainSources.get(win.title);
   if (source?.isVisible) {
     return source.sceneName;
   }
 
-  const tLower = win.title.toLowerCase().trim();
-  const pLower = win.processName.toLowerCase().replace(/\.exe$/, "").trim();
-
-  // 2. Match processName di mainSources
-  for (const src of mainSources.values()) {
-    if (src.processName?.toLowerCase() === win.processName.toLowerCase()) {
-      return src.sceneName;
-    }
-  }
-
-  // 3. Dynamic aliases (dari top-most window capture per scene)
-  if (dynamicAliases) {
-    for (const [exeName, targetScene] of Object.entries(dynamicAliases)) {
-      const kLower = exeName.toLowerCase().replace(/\.exe$/, "");
-      if (pLower === kLower || win.processName.toLowerCase() === exeName.toLowerCase()) {
-        const matched = scenes.find(s => s.toLowerCase() === targetScene.toLowerCase());
-        if (matched) return matched;
-      }
-    }
-  }
-
-  // 4. Fallback match nama scene (misal scene "terminal" cocok dengan "Termius")
-  for (const scene of scenes) {
-    const sLower = scene.toLowerCase().trim();
-    if (pLower.includes(sLower) || sLower.includes(pLower)) {
-      return scene;
+  for (const source of mainSources.values()) {
+    if (source.processName?.toLowerCase() === win.processName.toLowerCase()) {
+      return source.sceneName;
     }
   }
 
@@ -122,25 +96,6 @@ async function refreshScenes() {
     const data = await obs.call("GetSceneList");
     currentScene = data.currentProgramSceneName || "";
     availableScenes = (data.scenes || []).map((s: any) => s.sceneName);
-
-    const newAliases: Record<string, string> = {};
-    for (const scene of availableScenes) {
-      try {
-        const items = await obs.call("GetSceneItemList", { sceneName: scene });
-        if (items.sceneItems && items.sceneItems.length > 0) {
-          const mainSource = items.sceneItems[0];
-          const s = await obs.call("GetInputSettings", { inputName: mainSource.sourceName });
-          const winString = s.inputSettings?.window;
-          if (typeof winString === "string") {
-            const exe = winString.split(":").pop();
-            if (exe && exe.toLowerCase().endsWith(".exe")) {
-              newAliases[exe.toLowerCase()] = scene;
-            }
-          }
-        }
-      } catch (e) {}
-    }
-    dynamicAliases = newAliases;
     await loadSources();
   } catch {}
 }
