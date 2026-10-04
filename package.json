@@ -9,7 +9,9 @@
     "list-sources": "bun list_sources.ts",
     "rename-source": "bun rename_source.ts",
     "toggle-source": "bun toggle_source.ts",
-    "add-source": "bun add_source.ts"
+    "add-source": "bun add_source.ts",
+    "list-obs-windows": "bun list_obs_windows.ts",
+    "update-input": "bun update_input.ts"
   },
   "keywords": ["obs", "obs-control", "obs-websocket", "auto-scene-switcher", "alt-tab", "window-tracker"],
   "license": "MIT"
