@@ -11,7 +11,8 @@
     "toggle-source": "bun toggle_source.ts",
     "add-source": "bun add_source.ts",
     "list-obs-windows": "bun list_obs_windows.ts",
-    "update-input": "bun update_input.ts"
+    "update-input": "bun update_input.ts",
+    "order-source": "bun order_source.ts"
   },
   "keywords": ["obs", "obs-control", "obs-websocket", "auto-scene-switcher", "alt-tab", "window-tracker"],
   "license": "MIT"
