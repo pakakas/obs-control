@@ -53,12 +53,14 @@ async function loadSources() {
         const sourceData = {
           sourceName: mainItem.sourceName,
           sceneName,
+          sceneItemId: mainItem.sceneItemId,
           title,
           processName,
           sourceType,
+          enabled: mainItem.sceneItemEnabled,
           pid: windows.find(w => w.title?.includes(title))?.pid,
           get isVisible() {
-            return true;
+            return this.enabled === true;
           }
         };
         mainSources.set(title, sourceData);
@@ -84,7 +86,7 @@ function findMatchingScene(win: WindowInfo, scenes: string[], mainSources: Map<s
   console.debug('findMatchingScene', win, scenes)
 
   for (const source of mainSources.values()) {
-    if (source.processName === win.processName) {
+    if (source.processName === win.processName && source.isVisible) {
       return source.sceneName
     }
   }
@@ -100,6 +102,17 @@ async function refreshScenes() {
     const data = await obs.call("GetSceneList");
     currentScene = data.currentProgramSceneName || "";
     availableScenes = (data.scenes || []).map((s: any) => s.sceneName);
+
+    // Sinkronkan status visibility source di OBS secara realtime
+    for (const src of mainSources.values()) {
+      try {
+        const res = await obs.call("GetSceneItemEnabled", {
+          sceneName: src.sceneName,
+          sceneItemId: src.sceneItemId
+        });
+        src.enabled = res.sceneItemEnabled;
+      } catch {}
+    }
   } catch {}
 }
 
