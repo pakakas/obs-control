@@ -127,14 +127,10 @@ async function refreshScenes() {
     for (const scene of availableScenes) {
       try {
         const items = await obs.call("GetSceneItemList", { sceneName: scene });
-        const winCaps = items.sceneItems
-          .filter((i: any) => (i.inputKind === "window_capture" || i.inputKind === "game_capture") && i.sceneItemEnabled === true)
-          .sort((a: any, b: any) => b.sceneItemIndex - a.sceneItemIndex);
-
-        if (winCaps.length > 0) {
-          const topSource = winCaps[0];
-          const s = await obs.call("GetInputSettings", { inputName: topSource.sourceName });
-          const winString = s.inputSettings.window;
+        if (items.sceneItems && items.sceneItems.length > 0) {
+          const mainSource = items.sceneItems[0];
+          const s = await obs.call("GetInputSettings", { inputName: mainSource.sourceName });
+          const winString = s.inputSettings?.window;
           if (typeof winString === "string") {
             const exe = winString.split(":").pop();
             if (exe && exe.toLowerCase().endsWith(".exe")) {
