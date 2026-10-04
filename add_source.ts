@@ -53,6 +53,9 @@ async function main() {
   const fileStr = opts.file || opts.f;
   const enabled = opts.enabled !== "false";
   const priority = parseInt(opts.priority || "1", 10);
+  const preset = opts.preset || opts.p;
+  const posStr = opts.pos;
+  const boundsStr = opts.bounds;
 
   if (!name) {
     console.log(`
@@ -68,9 +71,13 @@ Options:
   --exclude, -e  Comma-separated scene names/keywords to exclude (default: 'wallpaper')
   --enabled      Set initial enabled state ('true' or 'false', default: true)
   --priority     Window matching priority (default: 1 = match by title)
+  --preset, -p   Transform preset: 'top-right' (lanskap), 'bottom' (vertikal 16:9 slot)
+  --pos          Manual position 'X,Y' (e.g. 1710,20)
+  --bounds       Manual bounds 'WxH' (e.g. 190x100)
 
 Examples:
-  bun add_source.ts --name talk --kind window_capture --window "Gawdat - YouTube - Brave:Chrome_WidgetWin_1:brave.exe" --target vertical --exclude wallpaper
+  bun add_source.ts --name talk --kind window_capture --window "Gawdat - YouTube - Brave:Chrome_WidgetWin_1:brave.exe" --target vertical --exclude wallpaper --preset bottom
+  bun add_source.ts --name profile-pic --kind image_source --file "static/profilepic.png" --target main --exclude wallpaper --preset top-right
   bun add_source.ts --name alert --kind browser_source --url "http://localhost:3000/alert" --target all
 `);
     process.exit(1);
@@ -165,6 +172,38 @@ Examples:
       }
     } catch {}
 
+    // Helper to apply transform and protect index [0]
+    async function postProcessSceneItem(sceneItemId: number) {
+      if (customTransform) {
+        try {
+          await obs.call("SetSceneItemTransform", {
+            sceneName,
+            sceneItemId,
+            ...(isVertical ? { canvasUuid: CANVAS_UUID } : {}),
+            sceneItemTransform: customTransform
+          });
+          console.log(`    ➔ Transform diterapkan (${preset || posStr || boundsStr})`);
+        } catch (e: any) {
+          console.log(`    ⚠ Gagal set transform: ${e.message}`);
+        }
+      }
+
+      // Pastikan item baru TIDAK membajak index [0] jika bukan satu-satunya item
+      try {
+        const finalRes = await obs.call("GetSceneItemList", { sceneName, ...(isVertical ? { canvasUuid: CANVAS_UUID } : {}) });
+        const items = finalRes.sceneItems || [];
+        if (items.length > 1 && items[0].sourceName === name) {
+          // Pindahkan item baru ke paling atas agar index [0] tetap main source
+          await obs.call("SetSceneItemIndex", {
+            sceneName,
+            sceneItemId,
+            sceneItemIndex: items.length - 1,
+            ...(isVertical ? { canvasUuid: CANVAS_UUID } : {})
+          });
+        }
+      } catch {}
+    }
+
     // Add to vertical scene
     if (isVertical) {
       let sourceUuid = inputItem?.sourceUuid;
@@ -186,6 +225,7 @@ Examples:
             canvasUuid: CANVAS_UUID
           });
           console.log(`  ✓ [${sceneName}] "${name}" ditambahkan (id: ${res.sceneItemId})`);
+          await postProcessSceneItem(res.sceneItemId);
           return;
         } catch {}
       }
@@ -199,6 +239,7 @@ Examples:
           canvasUuid: CANVAS_UUID
         });
         console.log(`  ✓ [${sceneName}] "${name}" ditambahkan (id: ${res.sceneItemId})`);
+        await postProcessSceneItem(res.sceneItemId);
         return;
       } catch {}
 
@@ -213,6 +254,7 @@ Examples:
           canvasUuid: CANVAS_UUID
         });
         console.log(`  ✓ [${sceneName}] "${name}" dibuat baru (id: ${res.sceneItemId})`);
+        await postProcessSceneItem(res.sceneItemId);
         return;
       } catch (err: any) {
         console.log(`  ✗ [${sceneName}] Gagal menambahkan: ${err.message}`);
@@ -230,6 +272,7 @@ Examples:
           });
           inputItem = { inputName: name, inputKind: kind };
           console.log(`  ✓ [${sceneName}] "${name}" dibuat di scene (id: ${res.sceneItemId})`);
+          await postProcessSceneItem(res.sceneItemId);
           return;
         } else {
           const res = await obs.call("CreateSceneItem", {
@@ -238,6 +281,7 @@ Examples:
             sceneItemEnabled: enabled
           });
           console.log(`  ✓ [${sceneName}] "${name}" ditambahkan (id: ${res.sceneItemId})`);
+          await postProcessSceneItem(res.sceneItemId);
           return;
         }
       } catch (err: any) {

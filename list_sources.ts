@@ -33,6 +33,14 @@ async function main() {
       process.exit(0);
     }
     
+    // Video / Canvas info
+    try {
+      const video = await obs.call("GetVideoSettings");
+      console.log(`\n=== OBS CANVAS / VIDEO ===`);
+      console.log(`Main Canvas:     ${video.baseWidth}x${video.baseHeight} (Output: ${video.outputWidth}x${video.outputHeight} @ ${(video.fpsNumerator / video.fpsDenominator).toFixed(0)}fps)`);
+      console.log(`Vertical Canvas: 1080x1920`);
+    } catch {}
+
     // 1. Get Scene List & their items
     const sceneData = await obs.call("GetSceneList");
     const currentScene = sceneData.currentProgramSceneName;
