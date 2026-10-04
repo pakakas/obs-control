@@ -39,9 +39,6 @@ let availableScenes: string[] = [];
 let currentScene = "";
 async function loadSources() {
   const windows = getWindows();
-  mainSources.clear();
-  singleInstanceSources.clear();
-
   const scenes = availableScenes.length > 0 ? availableScenes : (obs.availableScenes || []);
   for (const sceneName of scenes) {
     try {
@@ -96,7 +93,6 @@ async function refreshScenes() {
     const data = await obs.call("GetSceneList");
     currentScene = data.currentProgramSceneName || "";
     availableScenes = (data.scenes || []).map((s: any) => s.sceneName);
-    await loadSources();
   } catch {}
 }
 
