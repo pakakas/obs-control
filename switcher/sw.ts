@@ -48,32 +48,27 @@ async function loadSources() {
   for (const sceneName of scenes) {
     try {
       const sources = await obs.call('GetSceneItemList', { sceneName });
-      // Aturan: Main source adalah Window/Game Capture TERATAS yang ENABLED
-      const winCaps = (sources.sceneItems || [])
-        .filter((i: any) => (i.inputKind === "window_capture" || i.inputKind === "game_capture") && i.sceneItemEnabled === true)
-        .sort((a: any, b: any) => b.sceneItemIndex - a.sceneItemIndex);
+      if (!sources.sceneItems || sources.sceneItems.length === 0) continue;
 
-      if (winCaps.length > 0) {
-        const topSource = winCaps[0];
-        const input = await obs.call('GetInputSettings', { inputName: topSource.sourceName });
+      const mainItem = sources.sceneItems[0];
+      const input = await obs.call('GetInputSettings', { inputName: mainItem.sourceName });
 
-        if (input.inputSettings?.window) {
-          const [title, sourceType, processName] = input.inputSettings.window.split(':');
-          const sourceData = {
-            sourceName: topSource.sourceName,
-            sceneName,
-            title,
-            processName,
-            sourceType,
-            pid: windows.find(w => w.title?.includes(title))?.pid,
-            get isVisible() {
-              return true;
-            }
-          };
-          mainSources.set(title, sourceData);
-          if (processName && !singleInstanceSources.get(processName)) {
-            singleInstanceSources.set(processName, sourceData);
+      if (input.inputSettings?.window) {
+        const [title, sourceType, processName] = input.inputSettings.window.split(':');
+        const sourceData = {
+          sourceName: mainItem.sourceName,
+          sceneName,
+          title,
+          processName,
+          sourceType,
+          pid: windows.find(w => w.title?.includes(title))?.pid,
+          get isVisible() {
+            return true;
           }
+        };
+        mainSources.set(title, sourceData);
+        if (processName && !singleInstanceSources.get(processName)) {
+          singleInstanceSources.set(processName, sourceData);
         }
       }
     } catch {}
