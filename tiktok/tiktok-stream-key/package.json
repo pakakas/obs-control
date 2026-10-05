@@ -4,14 +4,14 @@
   "description": "TikTok Live Stream Key & RTMP URL Generator with Web Dashboard & CDP automation",
   "main": "server.ts",
   "bin": {
-    "tiktok-live": "./live.ts"
+    "tiktok-live": "./create-live.ts"
   },
   "scripts": {
     "start": "bun run server.ts",
     "dev": "bun --watch server.ts",
-    "live": "bun run live.ts",
-    "go-live": "bun run live.ts",
-    "set-title": "bun run live.ts"
+    "create-live": "bun run create-live.ts",
+    "live": "bun run create-live.ts",
+    "go-live": "bun run create-live.ts"
   },
   "keywords": ["tiktok", "live", "streamkey", "rtmp", "obs", "bun"],
   "author": "",

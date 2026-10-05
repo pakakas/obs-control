@@ -20,7 +20,8 @@ Otomasi pendaftaran sesi room TikTok LIVE, header signing batch via RapidAPI Sig
 
 ### 1. Jalankan via CLI (Cepat)
 ```bash
-bun run live "Judul Live Anda"
+bun run create-live "Judul Live Anda"
+# atau dari root: bun run create-live "Judul Live Anda"
 ```
 
 ### 2. Jalankan via Web Dashboard

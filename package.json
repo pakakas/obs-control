@@ -12,7 +12,8 @@
     "add-source": "bun add_source.ts",
     "list-obs-windows": "bun list_obs_windows.ts",
     "update-input": "bun update_input.ts",
-    "order-source": "bun order_source.ts"
+    "order-source": "bun order_source.ts",
+    "create-live": "bun tiktok/tiktok-stream-key/create-live.ts"
   },
   "keywords": ["obs", "obs-control", "obs-websocket", "auto-scene-switcher", "alt-tab", "window-tracker"],
   "license": "MIT"
