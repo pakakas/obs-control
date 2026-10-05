@@ -180,18 +180,34 @@ export class TikTokClient {
 
     const streamUrlObj = room.stream_url || {};
     this.streamUrl = streamUrlObj.complete_push_url || "";
-    this.serverUrl = streamUrlObj.rtmp_push_url || "";
-    this.streamKey = streamUrlObj.rtmp_key || "";
+
+    // Selalu parse dari complete_push_url agar serverUrl & streamKey tidak tercampur
+    if (this.streamUrl) {
+      // complete_push_url format: rtmp://host/appname/stream-XXX?params
+      const rtmpBody = this.streamUrl.replace(/^rtmp:\/\//, "");
+      const slashIdx = rtmpBody.indexOf("/");
+      const host = rtmpBody.slice(0, slashIdx);
+      const rest = rtmpBody.slice(slashIdx + 1); // "appname/stream-XXX?params"
+      const secondSlash = rest.indexOf("/");
+      if (secondSlash !== -1) {
+        const appname = rest.slice(0, secondSlash);
+        const keyPart = rest.slice(secondSlash + 1); // "stream-XXX?params"
+        this.serverUrl = `rtmp://${host}/${appname}`;
+        this.streamKey = keyPart;
+      } else {
+        // fallback: tidak ada appname
+        this.serverUrl = `rtmp://${host}`;
+        this.streamKey = rest;
+      }
+    } else {
+      // Fallback ke field terpisah jika complete_push_url kosong
+      this.serverUrl = streamUrlObj.rtmp_push_url || "";
+      this.streamKey = streamUrlObj.rtmp_key || "";
+    }
 
     const multiStreamUrlObj = room.multi_stream_url || {};
     const multiServerUrl = multiStreamUrlObj.rtmp_push_url || "";
     const multiStreamKey = multiStreamUrlObj.rtmp_key || "";
-
-    if (!this.serverUrl && this.streamUrl) {
-      const parts = this.streamUrl.split("/");
-      this.streamKey = parts.pop() || "";
-      this.serverUrl = parts.join("/");
-    }
 
     return {
       roomId: this.roomId,
