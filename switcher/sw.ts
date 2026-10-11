@@ -1,6 +1,5 @@
 import { OBSWebSocketClient } from "./obs_client";
-import { getActiveWindow, WindowInfo, findWindowByTitle, getWindows } from "./window_tracker";
-import { keyboardHook, isAltHeld } from "./keyboard-hook";
+import { createFocusAdapter, FocusAdapter, FocusEvent, FocusWindow } from "./focus-adapter";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -12,129 +11,145 @@ interface Config {
   poll_interval_ms?: number;
   aliases?: Record<string, string>;
   vertical_scenes?: Record<string, string>;
+  strict_title_windows?: string[];
   window_trackers?: Array<{ source: string; exe: string; title_keyword: string }>;
 }
+let focusAdapter: FocusAdapter | undefined;
 
 function loadConfig(): Config {
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
-    }
+    if (fs.existsSync(CONFIG_FILE)) return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
   } catch {}
-  return {
-    obs_url: "ws://127.0.0.1:4455",
-    obs_password: "",
-    poll_interval_ms: 50,
-    aliases: {}
-  };
+  return { obs_url: "ws://127.0.0.1:4455", poll_interval_ms: 50, aliases: {} };
 }
 
 const config = loadConfig();
 const obs = new OBSWebSocketClient(config.obs_url || "ws://127.0.0.1:4455", config.obs_password || "");
-
-const mainSources = new Map()
-const singleInstanceSources = new Map()
+const mainSources = new Map<string, any>();
+const singleInstanceSources = new Map<string, any>();
+const obsSourceCache: Array<{ sceneName: string; sourceName: string; inputKind: string; enabled: boolean; windowSpec: string }> = [];
 
 let availableScenes: string[] = [];
 let currentScene = "";
+let lastWindowId = "";
+let lastTitle = "";
+let isLoopStarted = false;
+
 async function loadSources() {
-  const windows = getWindows();
-  const scenes = availableScenes.length > 0 ? availableScenes : (obs.availableScenes || []);
-  for (const sceneName of scenes) {
+  mainSources.clear();
+  singleInstanceSources.clear();
+  obsSourceCache.length = 0;
+
+  const visibleWindows = await focusAdapter!.getVisibleWindows();
+  const sourceScenes = availableScenes.length > 0 ? availableScenes : (obs.availableScenes || []);
+  for (const sceneName of sourceScenes) {
     try {
-      const sources = await obs.call('GetSceneItemList', { sceneName });
-      if (!sources.sceneItems || sources.sceneItems.length === 0) continue;
-
-      const mainItem = sources.sceneItems[0];
-      const input = await obs.call('GetInputSettings', { inputName: mainItem.sourceName });
-
-      if (input.inputSettings?.window) {
-        const [title, sourceType, processName] = input.inputSettings.window.split(':');
-        const sourceData = {
-          sourceName: mainItem.sourceName,
+      const { sceneItems = [] } = await obs.call("GetSceneItemList", { sceneName });
+      for (const item of sceneItems) {
+        let inputSettings: Record<string, any> = {};
+        try {
+          const input = await obs.call("GetInputSettings", { inputName: item.sourceName });
+          inputSettings = input.inputSettings || {};
+        } catch {}
+        const windowSpec = typeof inputSettings.capture_window === "string"
+          ? inputSettings.capture_window
+          : (typeof inputSettings.window === "string" ? inputSettings.window : "");
+        obsSourceCache.push({
           sceneName,
-          sceneItemId: mainItem.sceneItemId,
-          title,
-          processName,
-          sourceType,
-          enabled: mainItem.sceneItemEnabled,
-          pid: windows.find(w => w.title?.includes(title))?.pid,
-          get isVisible() {
-            return this.enabled === true;
-          }
-        };
-        mainSources.set(title, sourceData);
-        if (processName && !singleInstanceSources.get(processName)) {
-          singleInstanceSources.set(processName, sourceData);
-        }
+          sourceName: item.sourceName,
+          inputKind: item.inputKind || "unknown",
+          enabled: item.sceneItemEnabled === true,
+          windowSpec,
+        });
       }
+
+      if (sceneItems.length === 0) continue;
+      const mainItem = sceneItems[0];
+      const input = await obs.call("GetInputSettings", { inputName: mainItem.sourceName });
+      const settings = input.inputSettings || {};
+      const windowSpec = typeof settings.capture_window === "string"
+        ? settings.capture_window
+        : (typeof settings.window === "string" ? settings.window : "");
+      if (!windowSpec) continue;
+
+      const parsed = focusAdapter!.parseWindowSource(settings, visibleWindows);
+      if (!parsed) continue;
+      const { title, processName, windowId } = parsed;
+
+      const source = {
+        sourceName: mainItem.sourceName,
+        sceneName,
+        sceneItemId: mainItem.sceneItemId,
+        title,
+        processName,
+        windowId,
+        enabled: mainItem.sceneItemEnabled === true,
+        get isVisible() { return this.enabled === true; },
+      };
+      mainSources.set(title, source);
+      const key = focusAdapter!.canonicalizeProcess(processName || "");
+      if (key && !singleInstanceSources.has(key)) singleInstanceSources.set(key, source);
     } catch {}
   }
-
-  console.debug({mainSources, singleInstanceSources})
+  // console.debug({ mainSources, singleInstanceSources });
 }
 
-function findMatchingScene(win: WindowInfo, scenes: string[], mainSources: Map<string, any>): string | null {
-  // console.debug('findMatchingScene', {criter: win, scenes, config})
+function findMatchingScene(window: FocusWindow): string | null {
+  let source = mainSources.get(window.title);
+  if (source?.isVisible) return source.sceneName;
 
-  let source = mainSources.get(win.title)
-
-  if (source?.isVisible) {
-    // console.debug('found in mainSources by title')
-    return source.sceneName
+  const process = focusAdapter!.canonicalizeProcess(window.processName);
+  const strictProcess = (config.strict_title_windows || []).some(name => focusAdapter!.canonicalizeProcess(name) === process);
+  if (!strictProcess) {
+    source = singleInstanceSources.get(process);
+    if (source?.isVisible) return source.sceneName;
   }
-
-  if (!config.strict_title_windows?.includes(win.processName)) {
-    source = singleInstanceSources.get(win.processName)
-    if (source?.isVisible) {
-      // console.debug('found in mainSources by processName')
-      return source.sceneName
-    }
-  }
-
   return null;
 }
 
-let lastHwnd: any = null;
-let lastTitle = "";
+function buildX11WindowCache(windows: FocusWindow[]) {
+  const cache = new Map<string, string>();
+  for (const window of windows) {
+    if (window.isOBS) continue;
+    const byId = [...mainSources.values()].filter(source => source.enabled && source.windowId === window.id);
+    const exactIdScenes = [...new Set(byId.map(source => source.sceneName))];
+    const scene = exactIdScenes.length === 1 ? exactIdScenes[0] : findMatchingScene(window);
+    if (scene) cache.set(window.id, scene);
+  }
+  return cache;
+}
 
 async function refreshScenes() {
   try {
     const data = await obs.call("GetSceneList");
     currentScene = data.currentProgramSceneName || "";
-    availableScenes = (data.scenes || []).map((s: any) => s.sceneName);
-
-    // Sinkronkan status visibility source di OBS secara realtime
-    for (const src of mainSources.values()) {
+    availableScenes = (data.scenes || []).map((scene: any) => scene.sceneName);
+    for (const source of mainSources.values()) {
       try {
-        const res = await obs.call("GetSceneItemEnabled", {
-          sceneName: src.sceneName,
-          sceneItemId: src.sceneItemId
+        const result = await obs.call("GetSceneItemEnabled", {
+          sceneName: source.sceneName,
+          sceneItemId: source.sceneItemId,
         });
-        src.enabled = res.sceneItemEnabled;
+        source.enabled = result.sceneItemEnabled;
       } catch {}
     }
   } catch {}
 }
 
-async function handleFinalWindowSwitch(win: WindowInfo) {
-  if (win.title === "Task Switching" || win.title === "Task View" || win.processName.toLowerCase() === "shellexperiencehost.exe") {
-    return;
-  }
-
-  if (win.isOBS) {
+async function handleWindowSwitch(window: FocusWindow, x11Cache?: Map<string, string>) {
+  if (window.title === "Task Switching" || window.title === "Task View" ||
+      window.processName.toLowerCase() === "shellexperiencehost.exe") return;
+  if (window.isOBS) {
     console.log(`[Focus] OBS Studio aktif (Scene dipertahankan: "${currentScene}")`);
     return;
   }
 
   await refreshScenes();
-  const matchedScene = findMatchingScene(win, availableScenes, mainSources);
-console.debug({matchedScene})
+  const matchedScene = x11Cache?.get(window.id) || findMatchingScene(window);
   if (!matchedScene) {
-    console.log(`[No Match] Window: "${win.title.slice(0, 40)}" (${win.processName}) tidak ada di OBS [${availableScenes.join(", ")}]`);
+    console.log(`[No Match] Window: "${window.title.slice(0, 40)}" (${window.processName}) tidak ada di OBS [${availableScenes.join(", ")}]`);
     return;
   }
-
   if (currentScene.toLowerCase() === matchedScene.toLowerCase()) {
     console.log(`[Current] Tetap di scene "${matchedScene}"`);
     return;
@@ -143,122 +158,98 @@ console.debug({matchedScene})
   try {
     await obs.call("SetCurrentProgramScene", { sceneName: matchedScene });
     currentScene = matchedScene;
-    console.log(`[SWITCH OBS MAIN] ➔ "${matchedScene}" (Window: "${win.title.slice(0, 35)}", Proc: "${win.processName}")`);
-
+    console.log(`[SWITCH OBS MAIN] ➔ "${matchedScene}" (Window: "${window.title.slice(0, 35)}", Proc: "${window.processName}")`);
     try {
-      const vSceneName = "v-" + matchedScene;
-
-      const vRes = await obs.call("CallVendorRequest", {
+      const verticalScene = "v-" + matchedScene;
+      const result = await obs.call("CallVendorRequest", {
         vendorName: "aitum-vertical-canvas",
         requestType: "switch_scene",
-        requestData: { scene: vSceneName }
+        requestData: { scene: verticalScene },
       });
-      if (vRes?.responseData?.success) {
-        console.log(`[SWITCH AITUM VERTICAL] ➔ "${vSceneName}" (Sukses via Vendor API)`);
-      }
-    } catch (vErr: any) {
-      if (!vErr.message.includes("No request was found")) {
-        console.error("Gagal switch Aitum Vertical:", vErr.message);
-      }
+      if (result?.responseData?.success) console.log(`[SWITCH AITUM VERTICAL] ➔ "${verticalScene}" (Sukses via Vendor API)`);
+    } catch (error: any) {
+      if (!String(error?.message).includes("No request was found")) console.error("Gagal switch Aitum Vertical:", error?.message);
     }
-  } catch (e: any) {
-    console.error("Gagal switch scene:", e.message);
+  } catch (error: any) {
+    console.error("Gagal switch scene:", error?.message);
   }
 }
 
-let isLoopStarted = false;
+// Platform wrapper: OBS and scene-switching flow stays in this file;
+// the OS-specific modules only report the focused window.
+async function subscribeFocusBackend(onFocus: (event: FocusEvent) => void) {
+  await focusAdapter!.subscribe(onFocus, message => console.error(`[${focusAdapter!.platformName}] ${message}`));
+}
 
-export async function startAutoSwitcher() {
+async function startAutoSwitcher() {
+  try { focusAdapter = await createFocusAdapter(); }
+  catch (error: any) { console.error(error?.message || String(error)); process.exitCode = 1; return; }
   console.log("==================================================");
-  console.log("  @pakakas/obs-control — Alt+Tab Auto Switcher ");
-  console.log("  (mode: keyboard hook event-driven, no polling)  ");
+  console.log("  @pakakas/obs-control — Auto Scene Switcher");
+  console.log("  (OBS switching flow shared; focus API via adapter)");
   console.log("==================================================");
 
   try {
     await obs.connect();
     console.log("Terhubung ke OBS Studio!");
     await refreshScenes();
-    await loadSources()
+    await loadSources();
 
     try {
       const { inputs } = await obs.call("GetInputList", { inputKind: "browser_source" });
-      for (const i of inputs) {
-        await obs.call("SetInputSettings", { inputName: i.inputName, inputSettings: { shutdown: false } });
+      for (const input of inputs) {
+        await obs.call("SetInputSettings", { inputName: input.inputName, inputSettings: { shutdown: false } });
       }
-      console.log(`🌐 Browser sources aktif terus: [${inputs.map((i: any) => i.inputName).join(", ")}]`);
+      console.log(`🌐 Browser sources aktif terus: [${inputs.map((input: any) => input.inputName).join(", ")}]`);
     } catch {}
 
     console.log(`Scene aktif: "${currentScene}"`);
     console.log(`Scenes di OBS: [${availableScenes.join(", ")}]`);
-    console.log("\nMemantau event [Alt+Tab] & [Alt Rilis] (hook, bukan polling)...\n");
+    // console.log("[Debug] Seluruh source OBS:");
+    // for (const source of obsSourceCache) {
+    //   console.log(`  scene="${source.sceneName}" source="${source.sourceName}" kind="${source.inputKind}" enabled=${source.enabled} window="${source.windowSpec.replaceAll("\r\n", " | ")}"`);
+    // }
 
-    // --- Alt dilepas -> keyboard hook (worker) yang notify, bukan kita nanya tiap tick ---
-    keyboardHook.on("altReleased", async (totalTabs: number) => {
-      console.log(`\n[ALT RILIS] (Setelah ${totalTabs}x Tab) ➔ Menentukan window target...`);
+    const initialWindows = await focusAdapter!.getVisibleWindows();
+    let windowCache = buildX11WindowCache(initialWindows);
+    // console.log(`[${focusAdapter!.platformName}] Daftar window dan cache ID → scene:`);
+    // for (const window of initialWindows) {
+    //   console.log(`  id=${window.id} pid=${window.pid} process="${window.processName}" title="${window.title}" => ${windowCache.get(window.id) || "(unmatched)"}`);
+    // }
 
-      await new Promise((r) => setTimeout(r, 80));
-
-      const win = getActiveWindow();
-      if (win) {
-        lastHwnd = win.hwnd;
-        lastTitle = win.title;
-        await handleFinalWindowSwitch(win);
+    await subscribeFocusBackend(async event => {
+      if (event.eventType === "alt-released") {
+        console.log(`\n[ALT RILIS] (Setelah ${event.totalTabs || 0}x Tab) ➔ Menentukan window target...`);
+      } else {
+        if (event.id === lastWindowId && event.title === lastTitle) return;
+        await refreshScenes();
+        windowCache = buildX11WindowCache(await focusAdapter!.getVisibleWindows());
+        console.log(`[Focus] id=${event.id} process="${event.processName}" title="${event.title}" => ${event.isOBS ? "OBS (diabaikan)" : (windowCache.get(event.id) || findMatchingScene(event) || "tidak cocok")}`);
       }
+      lastWindowId = event.id;
+      lastTitle = event.title;
+      await handleWindowSwitch(event, windowCache);
     });
 
     if (!isLoopStarted) {
       isLoopStarted = true;
-
-      // Loop ini SEKARANG cuma buat 2 hal: (1) reconnect OBS kalau putus,
-      // (2) deteksi perpindahan fokus "biasa" (klik taskbar, dll — bukan alt-tab).
-      // Deteksi Alt/Tab sendiri sudah pindah total ke keyboard_hook.ts (event-driven).
+      // Keep the original Windows reconnect cadence; Linux focus events remain event-driven.
       setInterval(async () => {
         if (!obs.isConnected) {
           try {
             await obs.connect();
             await refreshScenes();
-          } catch {}
-          return;
+            if (focusAdapter!.reloadSourcesOnReconnect) await loadSources();
+          }
+          catch {}
         }
-
-        // Selama Alt masih ditahan (lagi milih window di UI Alt-Tab), jangan proses fokus dulu.
-        if (isAltHeld()) return;
-
-        // const win = getActiveWindow();
-        // if (!win) return;
-
-        // if (win.hwnd === lastHwnd && win.title === lastTitle) return;
-        // lastHwnd = win.hwnd;
-        // lastTitle = win.title;
-
-        // await handleFinalWindowSwitch(win);
-      }, config.poll_interval_ms || 50);
-
-      if (config.window_trackers && config.window_trackers.length > 0) {
-        // setInterval(async () => {
-        //   if (!obs.isConnected) return;
-        //   for (const tracker of config.window_trackers!) {
-        //     const title = findWindowByTitle(tracker.exe, tracker.title_keyword);
-        //     if (!title) continue;
-        //     const exe = tracker.exe;
-        //     const winString = `${title}:Chrome_WidgetWin_1:${exe}`;
-        //     try {
-        //       await obs.call("SetInputSettings", {
-        //         inputName: tracker.source,
-        //         inputSettings: { window: winString }
-        //       });
-        //     } catch {}
-        //   }
-        // }, 3000);
-      }
+      }, focusAdapter!.reconnectIntervalMs || config.poll_interval_ms || 50);
     }
-  } catch (err: any) {
-    console.log(err.message);
+  } catch (error: any) {
+    console.log(error?.message);
     console.log("Mencoba menghubungkan kembali dalam 3 detik...");
     setTimeout(startAutoSwitcher, 3000);
   }
 }
 
-if (import.meta.main) {
-  startAutoSwitcher();
-}
+if (import.meta.main) startAutoSwitcher();

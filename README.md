@@ -3,7 +3,7 @@
 Kontrol OBS Studio: **Auto Scene Switcher** (Alt+Tab listener) + **TikTok Live Stream Key Generator**.
 
 ## 🎯 Fitur & Aturan
-1. **Alt+Tab Listener Cepat**: Menggunakan native Win32 FFI (`user32.dll` + `kernel32.dll`) dengan latency hanya ~200ms dan 0% beban CPU.
+1. **Auto Scene Switcher**: Memilih scene berdasarkan window aktif. Windows memakai native Win32 keyboard hook; Ubuntu menyediakan backend X11.
 2. **Kecualikan OBS**: Jika Anda sedang membuka/mengklik jendela OBS Studio, scene **TIDAK AKAN BERUBAH** (scene tetap aman).
 3. **Syarat Terdaftar**: Hanya berpindah ke scene jika nama window / aplikasi aktif **terdaftar di daftar Scenes OBS** Anda (mendukung pencocokan nama scene, judul window, atau nama file executable).
 4. **Custom Aliases**: Bisa memetakan nama file exe ke scene tertentu di `config.json` (misal `Code.exe` -> `VSCode`, `brave.exe` -> `Browser`).
@@ -15,8 +15,22 @@ Kontrol OBS Studio: **Auto Scene Switcher** (Alt+Tab listener) + **TikTok Live S
 2. Jalankan switcher:
    ```bash
    bun run listen-scenes
-   # atau: bun switcher/sw.ts
+   # Perintah yang sama memilih backend Windows atau Ubuntu secara otomatis.
    ```
+
+### Ubuntu
+
+Switcher Ubuntu memantau window aktif di sesi **Xorg/X11**. `xdotool` dibutuhkan untuk membaca judul window dan proses:
+
+```bash
+sudo apt install xdotool
+bun run listen-scenes
+```
+
+Ubuntu Wayland tidak mengizinkan aplikasi biasa membaca judul window aktif melalui `xdotool`. Untuk menggunakan switcher ini, pilih **Ubuntu on Xorg** dari ikon roda gigi pada layar login, lalu jalankan perintah di atas. Konfigurasi OBS WebSocket dan `config.json` tetap sama.
+
+Saat start, switcher mengambil daftar window X11 dari `xdotool` dan daftar scene/source dari OBS, mencocokkan judul window capture yang cocok, lalu menyimpan hasilnya per X11 window ID. Perubahan judul browser tidak mengubah cache selama window itu tetap hidup. Window baru akan memicu rebuild cache.
+
 
 ---
 

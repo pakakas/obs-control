@@ -13,8 +13,8 @@ function loadOBSPass(): string {
   }
 }
 
-async function goLive() {
-  const customTitle = process.argv[2] || "clipper agent";
+async function createLive() {
+  const customTitle = process.argv[2];
 
   console.log(`\n======================================================`);
   console.log(`🚀 TikTok Live & OBS Auto-Setup`);
@@ -24,10 +24,12 @@ async function goLive() {
   try {
     const client = new TikTokClient();
     console.log("⚡ [1/2] Mendaftarkan room sesi live di server TikTok...");
+
     const result = await client.createStream({
       title: customTitle,
       topicId: "5",
-      multiStream: false
+      multiStream: false,
+      dryRun: process.argv[3] === '--dry-run',
     });
 
     console.log("✓ Sesi room live berhasil didaftarkan di TikTok!");
@@ -84,4 +86,4 @@ async function goLive() {
   }
 }
 
-goLive();
+createLive();

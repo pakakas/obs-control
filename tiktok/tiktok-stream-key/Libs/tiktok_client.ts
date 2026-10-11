@@ -155,6 +155,7 @@ export class TikTokClient {
     topicId?: string;
     ageRestricted?: boolean;
     multiStream?: boolean;
+    dryRun?: boolean;
   } = {}): Promise<StreamInfo> {
     if (!this.hasCookies()) {
       throw new Error("Cookies akun belum dimasukkan. Silakan paste cookies terlebih dahulu.");
@@ -172,37 +173,31 @@ export class TikTokClient {
       age_restricted: options.ageRestricted ? "1" : "0",
     };
 
-    const data = await this.signedRequest("POST", "https://webcast.tiktok.com/webcast/room/create/", params, postData);
+    let data;
+
+    if (options.dryRun) {
+      data = {
+        stream_url: {
+          rtmp_push_url: "rtmp://push-rtmp-l10-sg01.tiktokcdn.dummy/stage/stream-123456789?amun=true&c=ID&dsnp=1&expire=6accfb03&l_region=Singapore-Central&offsetTime=1791213699&dummy"
+        }
+      }
+    } else {          
+      data = await this.signedRequest("POST", "https://webcast.tiktok.com/webcast/room/create/", params, postData);
+    }
 
     const room = data.room || data;
     this.roomId = String(room.id_str || room.id || "");
     this.streamId = String(room.stream_id_str || room.stream_id || "");
 
     const streamUrlObj = room.stream_url || {};
-    this.streamUrl = streamUrlObj.complete_push_url || "";
+    this.streamUrl = streamUrlObj.complete_push_url || streamUrlObj.rtmp_push_url;
 
-    // Selalu parse dari complete_push_url agar serverUrl & streamKey tidak tercampur
-    if (this.streamUrl) {
-      // complete_push_url format: rtmp://host/appname/stream-XXX?params
-      const rtmpBody = this.streamUrl.replace(/^rtmp:\/\//, "");
-      const slashIdx = rtmpBody.indexOf("/");
-      const host = rtmpBody.slice(0, slashIdx);
-      const rest = rtmpBody.slice(slashIdx + 1); // "appname/stream-XXX?params"
-      const secondSlash = rest.indexOf("/");
-      if (secondSlash !== -1) {
-        const appname = rest.slice(0, secondSlash);
-        const keyPart = rest.slice(secondSlash + 1); // "stream-XXX?params"
-        this.serverUrl = `rtmp://${host}/${appname}`;
-        this.streamKey = keyPart;
-      } else {
-        // fallback: tidak ada appname
-        this.serverUrl = `rtmp://${host}`;
-        this.streamKey = rest;
-      }
-    } else {
-      // Fallback ke field terpisah jika complete_push_url kosong
-      this.serverUrl = streamUrlObj.rtmp_push_url || "";
-      this.streamKey = streamUrlObj.rtmp_key || "";
+    // complete_push_url format: rtmp://host/appname/stream-XXX?params
+    const streamKeyIdx = this.streamUrl.indexOf("/stream-");
+
+    if (streamKeyIdx !== -1) {
+      this.serverUrl = this.streamUrl.slice(0, streamKeyIdx);
+      this.streamKey = this.streamUrl.slice(streamKeyIdx + 1);
     }
 
     const multiStreamUrlObj = room.multi_stream_url || {};
